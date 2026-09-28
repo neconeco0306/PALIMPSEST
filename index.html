@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>PALIMPSEST — a field that remembers how you touch it</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#0a0a0a; }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; touch-action:none; user-select:none; }
+  canvas { display:block; width:100%; height:100%; }
+  #veil { position:fixed; inset:0; pointer-events:none; display:flex; align-items:flex-end; justify-content:space-between; padding:18px 20px calc(18px + env(safe-area-inset-bottom)); color:rgba(242,240,232,.48); font-size:11px; letter-spacing:.13em; mix-blend-mode:screen; }
+  #name { writing-mode:vertical-rl; transform:rotate(180deg); opacity:.55; }
+  #whisper { max-width:min(72vw,560px); text-align:right; transition:opacity 1s ease; }
+  #input { position:fixed; opacity:0; pointer-events:none; }
+  #flash { position:fixed; inset:0; pointer-events:none; opacity:0; background:#fff; mix-blend-mode:difference; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<input id="input" autocomplete="off" autocapitalize="off" spellcheck="false" />
+<div id="veil"><div id="name">PALIMPSEST / 余白生態系</div><div id="whisper">触れる。引く。止まる。文字を置く。</div></div>
+<div id="flash"></div>
+<script>
+(() => {
+'use strict';
+const c = document.getElementById('c'), ctx = c.getContext('2d', { alpha:false });
+const whisper = document.getElementById('whisper'), input = document.getElementById('input'), flash = document.getElementById('flash');
+let W=0,H=0,D=1,t=0,last=performance.now();
+const TAU=Math.PI*2;
+const pointer={x:0,y:0,down:false,sx:0,sy:0,px:0,py:0,start:0,moved:0};
+const motes=[], scars=[], glyphs=[], echoes=[];
+let audio=null,master=null,wind=null,windGain=null;
+let state={ touches:0, drags:0, holds:0, words:0, silence:0, temperament:.5, entropy:.22, memory:.62, phase:0, seed:Math.random()*9999, lastAction:Date.now() };
+try { const s=JSON.parse(localStorage.getItem('palimpsest-v1')); if(s) state={...state,...s,phase:(s.phase||0)+1}; } catch(e){}
+function save(){ try{ localStorage.setItem('palimpsest-v1',JSON.stringify(state)); }catch(e){} }
+addEventListener('beforeunload',save); setInterval(save,5000);
+function resize(){ D=Math.min(devicePixelRatio||1,2); W=innerWidth; H=innerHeight; c.width=W*D; c.height=H*D; ctx.setTransform(D,0,0,D,0,0); }
+addEventListener('resize',resize); resize();
+function rnd(a=1,b=0){ const x=Math.sin((state.seed+=.6180339887))*43758.5453; const r=x-Math.floor(x); return b+r*(a-b); }
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function tone(){
+ if(audio) return;
+ const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+ audio=new AC(); master=audio.createGain(); master.gain.value=.055; master.connect(audio.destination);
+ wind=audio.createOscillator(); wind.type='sine'; wind.frequency.value=42; windGain=audio.createGain(); windGain.gain.value=.018; const lp=audio.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=110; wind.connect(lp).connect(windGain).connect(master); wind.start();
+}
+function ping(x,y,kind=0){ if(!audio) return; const now=audio.currentTime; const o=audio.createOscillator(), g=audio.createGain(), f=audio.createBiquadFilter(); const base=74*Math.pow(2,Math.round((x/W)*10)/12); o.type=kind%3===0?'sine':kind%3===1?'triangle':'sawtooth'; o.frequency.setValueAtTime(base*(1+.6*y/H),now); o.frequency.exponentialRampToValueAtTime(Math.max(35,base*.54),now+.6); f.type='lowpass'; f.frequency.value=500+1200*(1-y/H); g.gain.setValueAtTime(.0001,now); g.gain.exponentialRampToValueAtTime(.08,now+.012); g.gain.exponentialRampToValueAtTime(.0001,now+.65+state.memory*.8); o.connect(f).connect(g).connect(master); o.start(now); o.stop(now+1.7); }
+function addMote(x,y,power=1){ const n=Math.floor(5+power*10); for(let i=0;i<n;i++){ const a=rnd(TAU),s=rnd(2.2,.2)*power; motes.push({x,y,px:x,py:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(280,90),age:0,size:rnd(2.2,.45),h:rnd(48,-18),spin:rnd(.04,-.04)}); } if(motes.length>1400)motes.splice(0,motes.length-1400); }
+function scar(x1,y1,x2,y2,w=1){ scars.push({x1,y1,x2,y2,w,age:0,life:900+state.memory*1600,bias:rnd(1,-1)}); if(scars.length>900)scars.splice(0,scars.length-900); }
+function action(type){ state.lastAction=Date.now(); state.silence=0; if(type==='tap')state.touches++; if(type==='drag')state.drags++; if(type==='hold')state.holds++; state.temperament=clamp(.5 + (state.holds-state.drags)*.015 + state.words*.006,0,1); state.entropy=clamp(.12 + state.drags*.008 + state.touches*.002 - state.holds*.004,.08,.82); }
+function down(e){ tone(); if(audio?.state==='suspended')audio.resume(); pointer.down=true; pointer.sx=pointer.px=pointer.x=e.clientX; pointer.sy=pointer.py=pointer.y=e.clientY; pointer.start=performance.now(); pointer.moved=0; addMote(pointer.x,pointer.y,.8); ping(pointer.x,pointer.y,state.touches); state.lastAction=Date.now(); }
+function move(e){ pointer.x=e.clientX; pointer.y=e.clientY; if(pointer.down){ const dx=pointer.x-pointer.px,dy=pointer.y-pointer.py,d=Math.hypot(dx,dy); pointer.moved+=d; if(d>2){ scar(pointer.px,pointer.py,pointer.x,pointer.y,clamp(d*.16,.5,4)); if(Math.random()<.42)addMote(pointer.x,pointer.y,.28); } pointer.px=pointer.x; pointer.py=pointer.y; } }
+function up(){ if(!pointer.down)return; const dur=performance.now()-pointer.start; pointer.down=false; if(pointer.moved>28) action('drag'); else if(dur>650){action('hold'); bloom(pointer.x,pointer.y); } else action('tap'); }
+addEventListener('pointerdown',down); addEventListener('pointermove',move); addEventListener('pointerup',up); addEventListener('pointercancel',up);
+addEventListener('keydown',e=>{ if(e.key==='Escape'){input.blur();return;} if(!e.metaKey&&!e.ctrlKey&&!e.altKey){ input.focus({preventScroll:true}); } });
+input.addEventListener('input',()=>{ const v=input.value; if(!v)return; const ch=[...v].pop(); input.value=''; dropGlyph(ch,pointer.x||W/2,pointer.y||H/2); });
+function dropGlyph(ch,x,y){ state.words++; state.lastAction=Date.now(); glyphs.push({ch,x,y,vx:rnd(.5,-.5),vy:rnd(-.1,-.8),rot:rnd(.4,-.4),vr:rnd(.01,-.01),age:0,life:rnd(1100,520),size:rnd(42,18)}); addMote(x,y,1.25); ping(x,y,state.words+2); if(glyphs.length>130)glyphs.shift(); }
+function bloom(x,y){ for(let k=0;k<34;k++){ const a=k/34*TAU+rnd(.08,-.08),r=8+rnd(18); scar(x+Math.cos(a)*r,y+Math.sin(a)*r,x+Math.cos(a)*(r+35+rnd(90)),y+Math.sin(a)*(r+35+rnd(90)),rnd(2.5,.3)); } addMote(x,y,2.6); ping(x,y,1); }
+function ghostEvent(){ const margin=60,x=rnd(W-margin,margin),y=rnd(H-margin,margin); const choice=Math.floor(rnd(4)); if(choice===0){ for(let i=0;i<20;i++)scar(rnd(W),y+rnd(18,-18),x,y,rnd(1.4,.2)); }
+ else if(choice===1){ echoes.push({x,y,r:2,age:0,life:280}); }
+ else if(choice===2){ const pool='余白記憶残響未明硝子海森孔'; dropGlyph(pool[Math.floor(rnd(pool.length))],x,y); }
+ else bloom(x,y);
+}
+function background(){ const v=9+Math.floor(state.temperament*5); ctx.fillStyle=`rgb(${v},${v},${v-1})`; ctx.fillRect(0,0,W,H); const g=ctx.createRadialGradient(pointer.x||W*.5,pointer.y||H*.5,0,W*.5,H*.5,Math.max(W,H)*.7); g.addColorStop(0,`rgba(235,231,211,${.018+state.memory*.018})`); g.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
+function drawScars(dt){ ctx.lineCap='round'; for(let i=scars.length-1;i>=0;i--){ const s=scars[i]; s.age+=dt; if(s.age>s.life){scars.splice(i,1);continue;} const q=1-s.age/s.life, pulse=.76+.24*Math.sin(t*.002+s.bias*5); ctx.strokeStyle=`rgba(224,219,198,${q*.18*pulse})`; ctx.lineWidth=s.w*(.4+q); ctx.beginPath(); ctx.moveTo(s.x1,s.y1); const mx=(s.x1+s.x2)/2 + Math.sin(t*.001+s.bias*9)*s.bias*4, my=(s.y1+s.y2)/2+Math.cos(t*.0013+s.bias*7)*s.bias*4; ctx.quadraticCurveTo(mx,my,s.x2,s.y2); ctx.stroke(); } }
+function drawMotes(dt){ for(let i=motes.length-1;i>=0;i--){ const p=motes[i]; p.age+=dt; if(p.age>p.life){motes.splice(i,1);continue;} const q=1-p.age/p.life; p.px=p.x;p.py=p.y; const dx=(pointer.x-p.x),dy=(pointer.y-p.y),dist=Math.hypot(dx,dy)+1; const attract=pointer.down?(.03*state.temperament):(-.004*state.entropy); p.vx += dx/dist*attract; p.vy += dy/dist*attract; p.vx += Math.sin((p.y+t*.02)*.008+p.h)*.006*state.entropy; p.vy += Math.cos((p.x-t*.018)*.009-p.h)*.006*state.entropy; p.vx*=.992;p.vy*=.992; p.x+=p.vx;p.y+=p.vy; ctx.strokeStyle=`hsla(${42+p.h},18%,78%,${q*.34})`; ctx.lineWidth=p.size*q; ctx.beginPath();ctx.moveTo(p.px,p.py);ctx.lineTo(p.x,p.y);ctx.stroke(); } }
+function drawGlyphs(dt){ ctx.textAlign='center';ctx.textBaseline='middle'; for(let i=glyphs.length-1;i>=0;i--){ const g=glyphs[i];g.age+=dt;if(g.age>g.life){glyphs.splice(i,1);continue;} const q=1-g.age/g.life; g.vy+=.0006;g.vx*=.999;g.x+=g.vx;g.y+=g.vy;g.rot+=g.vr;ctx.save();ctx.translate(g.x,g.y);ctx.rotate(g.rot);ctx.font=`${g.size}px serif`;ctx.fillStyle=`rgba(238,234,218,${q*.5})`;ctx.fillText(g.ch,0,0); if(g.age>g.life*.42){ ctx.globalCompositeOperation='destination-out'; for(let k=0;k<3;k++){ctx.fillStyle=`rgba(0,0,0,${.08*q})`;ctx.fillRect(rnd(g.size,-g.size),rnd(g.size*.6,-g.size*.6),rnd(14,3),1);} } ctx.restore();ctx.globalCompositeOperation='source-over'; } }
+function drawEchoes(dt){for(let i=echoes.length-1;i>=0;i--){const e=echoes[i];e.age+=dt;if(e.age>e.life){echoes.splice(i,1);continue;}const q=1-e.age/e.life;e.r+=.18+.25*state.entropy;ctx.strokeStyle=`rgba(210,215,205,${q*.12})`;ctx.lineWidth=.7;ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,TAU);ctx.stroke();}}
+let idleEventAt=performance.now()+8000;
+function meta(now){ const idle=(Date.now()-state.lastAction)/1000; state.silence=idle; if(idle>8 && now>idleEventAt){ghostEvent(); idleEventAt=now+5000+rnd(9000);}
+ if(audio){ wind.frequency.setTargetAtTime(32+state.temperament*25,audio.currentTime,.9); windGain.gain.setTargetAtTime(.008+Math.min(idle,20)*.0007,audio.currentTime,1.2); }
+ let msg='触れる。引く。止まる。文字を置く。'; if(state.words>3)msg='文字は残らない。癖だけが残る。'; if(state.drags>10 && state.holds<3)msg='速すぎる。世界は裂け方を覚えた。'; if(state.holds>4)msg='止まっている時間も入力として数えている。'; if(idle>18)msg='何もしないことも、この場所には作用する。'; if(state.phase>0 && state.touches+state.drags+state.words>12)msg=`前回の痕跡は消した。前回の触り方は消していない。 / ${state.phase+1}回目`;
+ whisper.textContent=msg; whisper.style.opacity=idle>4?.38:.62;
+ }
+function loop(now){ const dt=Math.min(32,now-last);last=now;t+=dt;background();drawScars(dt);drawMotes(dt);drawGlyphs(dt);drawEchoes(dt);meta(now); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+setInterval(()=>{if(pointer.down && performance.now()-pointer.start>700 && pointer.moved<12 && Math.random()<.35){addMote(pointer.x,pointer.y,.35)}},180);
+setInterval(()=>{ const total=state.touches+state.drags+state.holds+state.words; if(total>0 && total%23===0){flash.animate([{opacity:0},{opacity:.08},{opacity:0}],{duration:900}); state.memory=clamp(state.memory+rnd(.08,-.03),.25,.92); state.seed+=17.3;} },2200);
+})();
+</script>
+</body>
+</html>
