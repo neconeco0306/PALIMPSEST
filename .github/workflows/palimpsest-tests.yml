@@ -1,0 +1,24 @@
+name: PALIMPSEST behavior checks
+
+on:
+  pull_request:
+    paths:
+      - "index.html"
+      - "tests/**"
+      - ".github/workflows/palimpsest-tests.yml"
+  push:
+    paths:
+      - "index.html"
+      - "tests/**"
+      - ".github/workflows/palimpsest-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  behavior:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run dependency-free regression tests
+        run: node --test tests/*.test.mjs
