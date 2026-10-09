@@ -32,7 +32,7 @@ const TAU=Math.PI*2;
 const pointer={x:0,y:0,down:false,sx:0,sy:0,px:0,py:0,start:0,moved:0};
 const motes=[], scars=[], glyphs=[], echoes=[];
 let audio=null,master=null,wind=null,windGain=null;
-let state={ touches:0, drags:0, holds:0, words:0, silence:0, temperament:.5, entropy:.22, memory:.62, phase:0, seed:Math.random()*9999, lastAction:Date.now() };
+let state={ touches:0, drags:0, holds:0, words:0, silence:0, temperament:.5, entropy:.22, memory:.62, phase:0, seed:Math.random()*9999, lastAction:Date.now(), lastRitualMilestone:0 };
 try { const s=JSON.parse(localStorage.getItem('palimpsest-v1')); if(s) state={...state,...s,phase:(s.phase||0)+1}; } catch(e){}
 function save(){ try{ localStorage.setItem('palimpsest-v1',JSON.stringify(state)); }catch(e){} }
 addEventListener('beforeunload',save); setInterval(save,5000);
@@ -56,11 +56,11 @@ function up(){ if(!pointer.down)return; const dur=performance.now()-pointer.star
 addEventListener('pointerdown',down); addEventListener('pointermove',move); addEventListener('pointerup',up); addEventListener('pointercancel',up);
 addEventListener('keydown',e=>{ if(e.key==='Escape'){input.blur();return;} if(!e.metaKey&&!e.ctrlKey&&!e.altKey){ input.focus({preventScroll:true}); } });
 input.addEventListener('input',()=>{ const v=input.value; if(!v)return; const ch=[...v].pop(); input.value=''; dropGlyph(ch,pointer.x||W/2,pointer.y||H/2); });
-function dropGlyph(ch,x,y){ state.words++; state.lastAction=Date.now(); glyphs.push({ch,x,y,vx:rnd(.5,-.5),vy:rnd(-.1,-.8),rot:rnd(.4,-.4),vr:rnd(.01,-.01),age:0,life:rnd(1100,520),size:rnd(42,18)}); addMote(x,y,1.25); ping(x,y,state.words+2); if(glyphs.length>130)glyphs.shift(); }
+function dropGlyph(ch,x,y,fromWorld=false){ if(!fromWorld){state.words++; state.lastAction=Date.now();} glyphs.push({ch,x,y,vx:rnd(.5,-.5),vy:rnd(-.1,-.8),rot:rnd(.4,-.4),vr:rnd(.01,-.01),age:0,life:rnd(1100,520),size:rnd(42,18)}); addMote(x,y,1.25); ping(x,y,state.words+2); if(glyphs.length>130)glyphs.shift(); }
 function bloom(x,y){ for(let k=0;k<34;k++){ const a=k/34*TAU+rnd(.08,-.08),r=8+rnd(18); scar(x+Math.cos(a)*r,y+Math.sin(a)*r,x+Math.cos(a)*(r+35+rnd(90)),y+Math.sin(a)*(r+35+rnd(90)),rnd(2.5,.3)); } addMote(x,y,2.6); ping(x,y,1); }
 function ghostEvent(){ const margin=60,x=rnd(W-margin,margin),y=rnd(H-margin,margin); const choice=Math.floor(rnd(4)); if(choice===0){ for(let i=0;i<20;i++)scar(rnd(W),y+rnd(18,-18),x,y,rnd(1.4,.2)); }
  else if(choice===1){ echoes.push({x,y,r:2,age:0,life:280}); }
- else if(choice===2){ const pool='余白記憶残響未明硝子海森孔'; dropGlyph(pool[Math.floor(rnd(pool.length))],x,y); }
+ else if(choice===2){ const pool='余白記憶残響未明硝子海森孔'; dropGlyph(pool[Math.floor(rnd(pool.length))],x,y,true); }
  else bloom(x,y);
 }
 function background(){ const v=9+Math.floor(state.temperament*5); ctx.fillStyle=`rgb(${v},${v},${v-1})`; ctx.fillRect(0,0,W,H); const g=ctx.createRadialGradient(pointer.x||W*.5,pointer.y||H*.5,0,W*.5,H*.5,Math.max(W,H)*.7); g.addColorStop(0,`rgba(235,231,211,${.018+state.memory*.018})`); g.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); }
@@ -77,7 +77,7 @@ function meta(now){ const idle=(Date.now()-state.lastAction)/1000; state.silence
 function loop(now){ const dt=Math.min(32,now-last);last=now;t+=dt;background();drawScars(dt);drawMotes(dt);drawGlyphs(dt);drawEchoes(dt);meta(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 setInterval(()=>{if(pointer.down && performance.now()-pointer.start>700 && pointer.moved<12 && Math.random()<.35){addMote(pointer.x,pointer.y,.35)}},180);
-setInterval(()=>{ const total=state.touches+state.drags+state.holds+state.words; if(total>0 && total%23===0){flash.animate([{opacity:0},{opacity:.08},{opacity:0}],{duration:900}); state.memory=clamp(state.memory+rnd(.08,-.03),.25,.92); state.seed+=17.3;} },2200);
+setInterval(()=>{ const total=state.touches+state.drags+state.holds+state.words; if(total>0 && total%23===0 && total!==state.lastRitualMilestone){state.lastRitualMilestone=total;flash.animate([{opacity:0},{opacity:.08},{opacity:0}],{duration:900}); state.memory=clamp(state.memory+rnd(.08,-.03),.25,.92); state.seed+=17.3;} },2200);
 })();
 </script>
 </body>
